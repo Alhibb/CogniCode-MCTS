@@ -1,57 +1,105 @@
 import os
+import time
 import random
 from typing import List
 import google.generativeai as genai
+from google.api_core import exceptions
 from src.llm.abstract_client import AbstractLLMClient
 from src.utils.logger import logger
 
 class GeminiClient(AbstractLLMClient):
+    """
+    Implementation of the LLM Client using Google's Gemini 1.5.
+    Includes robustness layers: Rate Limit handling and Mock Fallback.
+    """
+    
     def __init__(self, api_key: str = None, mock_mode: bool = False):
         self.mock_mode = mock_mode
+        self.model_name = 'gemini-3-pro-preview' # Flash is faster/cheaper for high-iteration search
+        
         if not mock_mode:
             self.api_key = api_key or os.getenv("GEMINI_API_KEY")
             if not self.api_key:
-                logger.warning("No API Key found. Switching to MOCK MODE.")
+                logger.warning("No API Key found in env. Switching to MOCK MODE.")
                 self.mock_mode = True
             else:
                 genai.configure(api_key=self.api_key)
-                self.model = genai.GenerativeModel('gemini-3-pro-preview')
+                self.model = genai.GenerativeModel(self.model_name)
 
     def generate_candidates(self, problem: str, current_state: str, n: int = 3) -> List[str]:
+        """
+        Generates next-step candidates.
+        Strategy: Try API -> Catch 429/RateLimit -> Wait/Retry -> Failover to Mock.
+        """
         if self.mock_mode:
             return self._mock_generator(current_state, n)
         
-        # Real API Implementation
+        # 1. Construct a structural prompt to force easy-to-parse output
         prompt = f"""
-        You are a Python coding assistant.
-        Problem: {problem}
+        You are a generic coding completion engine.
         
-        Current Code Context:
+        TASK:
+        The user is solving this problem: "{problem}"
+        
+        CURRENT CODE STATE:
+        ```python
         {current_state}
+        ```
         
-        Instructions:
-        1. Generate exactly {n} distinct continuations for the next logical step.
-        2. Do not repeat code already in context.
-        3. Output only the code, separated by '|||' delimiter.
+        INSTRUCTIONS:
+        1. Generate exactly {n} distinct variations of the **next single logical line or block**.
+        2. Do NOT repeat code that is already in the Current Code State.
+        3. Do NOT wrap output in markdown (no ```python).
+        4. Separate each variation strictly with the string "|||".
+        5. If the code is complete, output "PASS".
+        
+        OUTPUT FORMAT:
+        Variation 1 ||| Variation 2 ||| Variation 3
         """
         
-        try:
-            response = self.model.generate_content(prompt)
-            # Naive parsing strategy - in prod this would be more robust
-            candidates = response.text.split('|||')
-            return [c.strip().replace('```python', '').replace('```', '') for c in candidates[:n]]
-        except Exception as e:
-            logger.error(f"API Error: {e}")
-            return self._mock_generator(current_state, n)
+        # 2. Resilience Loop (Exponential Backoff)
+        max_retries = 3
+        base_delay = 5 # seconds
+        
+        for attempt in range(max_retries):
+            try:
+                # Generate content
+                response = self.model.generate_content(prompt)
+                
+                # Parse response
+                raw_text = response.text
+                candidates = raw_text.split('|||')
+                
+                # Clean up artifacts
+                cleaned_candidates = [
+                    c.strip().replace('```python', '').replace('```', '').replace('PASS', 'pass') 
+                    for c in candidates
+                ]
+                
+                # Ensure we have the requested number (pad if necessary)
+                return cleaned_candidates[:n]
+            
+            except exceptions.ResourceExhausted:
+                # HTTP 429: Rate Limit Hit
+                wait_time = base_delay * (2 ** attempt) # 5s, 10s, 20s
+                logger.warning(f"⚠️ API Rate Limit (429). Cooling down for {wait_time}s... (Attempt {attempt + 1}/{max_retries})")
+                time.sleep(wait_time)
+                
+            except Exception as e:
+                # Other errors (400, 500, Safety filters)
+                logger.error(f"❌ API Error: {e}")
+                break # Break loop to trigger fallback
+
+        # 3. Failover
+        logger.warning("📉 API Unavailable or Exhausted. Falling back to Local Mock Generator.")
+        return self._mock_generator(current_state, n)
 
     def _mock_generator(self, current_state: str, n: int) -> List[str]:
         """
-        Simulates an LLM for testing without costs.
+        Simulates an LLM for testing without costs or when API is down.
         Scenario: Writing a recursive factorial function.
         """
-        candidates = []
-        
-        # State 0: Start
+        # Scenario 1: Function Definition
         if "def" not in current_state:
             return [
                 "def factorial(n):",
@@ -59,15 +107,15 @@ class GeminiClient(AbstractLLMClient):
                 "def fact(x):"
             ]
         
-        # State 1: Inside Function
+        # Scenario 2: Base Case
         if "factorial(n):" in current_state and "if" not in current_state:
             return [
                 "    if n == 0: return 1",  # Correct path
-                "    if n == 1: return 1",  # Okay path
+                "    if n == 1: return 1",  # Acceptable path
                 "    if n < 0: return None" # Defensive path
             ]
             
-        # State 2: Recursive step
+        # Scenario 3: Recursive Step
         if "return 1" in current_state and "return n" not in current_state:
             return [
                 "    return n * factorial(n-1)", # Correct
@@ -75,4 +123,5 @@ class GeminiClient(AbstractLLMClient):
                 "    return n + factorial(n-1)"  # Logic bug
             ]
             
+        # Scenario 4: Done
         return ["    pass"]
