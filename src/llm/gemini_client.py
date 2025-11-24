@@ -15,7 +15,7 @@ class GeminiClient(AbstractLLMClient):
                 self.mock_mode = True
             else:
                 genai.configure(api_key=self.api_key)
-                self.model = genai.GenerativeModel('gemini-1.5-flash')
+                self.model = genai.GenerativeModel('gemini-3-pro-preview')
 
     def generate_candidates(self, problem: str, current_state: str, n: int = 3) -> List[str]:
         if self.mock_mode:
