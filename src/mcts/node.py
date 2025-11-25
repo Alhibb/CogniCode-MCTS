@@ -6,7 +6,7 @@ class MCTSNode:
     Represents a state in the code generation tree.
     """
     def __init__(self, state: str, parent: Optional['MCTSNode'] = None):
-        self.state = state  # The code string generated so far
+        self.state = state  
         self.parent = parent
         self.children: List['MCTSNode'] = []
         self.visits: int = 0

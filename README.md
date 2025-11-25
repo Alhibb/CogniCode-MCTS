@@ -11,7 +11,7 @@ Current Large Language Models (LLMs) operate primarily as "System 1" thinkers—
 
 **CogniCode-MCTS** implements a "System 2" reasoning layer using **Monte Carlo Tree Search (MCTS)**. It treats code generation as a state-space search problem, using:
 1.  **Sandboxed Execution** as the ground-truth reward signal.
-2.  **LLMs (Gemini 1.5)** as the policy generator and heuristic evaluator.
+2.  **LLMs (Gemini 2.5)** as the policy generator and heuristic evaluator.
 3.  **UCB1 (Upper Confidence Bound)** for balancing exploration vs. exploitation.
 
 ##  Key Features
@@ -65,7 +65,25 @@ When the API quotas were exceeded (HTTP 429), the `CogniCode` engine automatical
 21:20:06 - ITER 23:  SOLUTION FOUND at depth 3
 ```
 
+##  Proof of Concept
+*Experiment Date: 25 November 2025*
+*Model: Google Gemini 2.5 Flash via API*
+
+In 5 iterations, the agent successfully navigated from an empty function signature to a fully working recursive algorithm, rejecting incomplete paths along the way.
+
+```text
+04:50:10 - Seed: def factorial(n):
+04:50:24 - ITER 3: D1 | R:0.1 (Valid/Inc) | ...rial(n):     if n == 0:         return 1
+04:50:27 - ITER 5:  SOLUTION FOUND at depth 2
+
+
 ##  Author
 **IBRAHIM RABIU**  
 Web3 Dev & AI Researcher
 
+
+## Connect with me
+
+* Twitter: [@I_bakondare](https://x.com/I_bakondare)
+* LinkedIn: [alhibb](https://linkedin.com/in/alhibb)
+* Telegram: [@Alhibb](https://t.me/@Alhibb)

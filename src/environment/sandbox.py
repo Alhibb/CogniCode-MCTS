@@ -8,16 +8,28 @@ from typing import Dict, Any
 class CodeSandbox:
     """
     Isolated execution environment. 
-    Uses subprocess to prevent the agent from crashing the main thread.
     """
     
     @staticmethod
     def validate_syntax(code: str) -> bool:
-        """Fast check to avoid spinning up processes for garbage code."""
+        """
+        Checks if the code is syntactically valid.
+        Handles 'incomplete' code (Unexpected EOF) by attempting to patch it.
+        """
         try:
             ast.parse(code)
             return True
-        except SyntaxError:
+        except SyntaxError as e:
+            # If the error is "unexpected EOF", it might just be incomplete
+            # e.g., "def factorial(n):" is invalid, but "def factorial(n): pass" is valid.
+            if e.msg.startswith("unexpected EOF") or e.msg.startswith("expected an indented block"):
+                try:
+                    # Attempt to patch with a pass statement to see if structure is valid
+                    patched_code = code + "\n    pass"
+                    ast.parse(patched_code)
+                    return True
+                except SyntaxError:
+                    return False
             return False
 
     def execute(self, code: str, test_harness: str) -> Dict[str, Any]:
@@ -43,12 +55,11 @@ class CodeSandbox:
 
         # 3. Execution with Timeout
         try:
-            # We run the script in a separate python process
             result = subprocess.run(
                 [sys.executable, script_path],
                 capture_output=True,
                 text=True,
-                timeout=2.0 # Strict 2s timeout for infinite loops
+                timeout=2.0 
             )
             
             output = result.stdout + result.stderr
@@ -63,7 +74,7 @@ class CodeSandbox:
             else:
                 return {
                     "success": False, 
-                    "score": 0.0, 
+                    "score": 0.0, # Neutral score for logic fail, but valid syntax
                     "error_type": "runtime", 
                     "output": output
                 }
@@ -76,6 +87,5 @@ class CodeSandbox:
                 "output": "Execution Timeout"
             }
         finally:
-            # Cleanup
             if os.path.exists(script_path):
                 os.remove(script_path)
