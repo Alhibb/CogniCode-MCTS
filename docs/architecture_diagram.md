@@ -5,7 +5,7 @@ flowchart TD
         Leaf --> Expand[Expansion]
     end
 
-    subgraph "Gemini 1.5 Flash"
+    subgraph "Gemini 2.5 Flash"
         Expand -->|Generate k=3| Candidate1[Option A]
         Expand -->|Generate k=3| Candidate2[Option B]
         Expand -->|Generate k=3| Candidate3[Option C]

@@ -1,11 +1,14 @@
 import random
-from typing import Optional
+from typing import Optional, Callable
 from src.mcts.node import MCTSNode
 from src.environment.sandbox import CodeSandbox
 from src.llm.abstract_client import AbstractLLMClient
 from src.utils.logger import logger
 
 class MCTSEngine:
+    """
+    The orchestrator implementing the Monte Carlo Tree Search algorithm.
+    """
     def __init__(self, llm_client: AbstractLLMClient, problem_desc: str, test_harness: str, starting_code: str = ""):
         self.llm = llm_client
         self.problem = problem_desc
@@ -13,32 +16,46 @@ class MCTSEngine:
         self.sandbox = CodeSandbox()
         self.root = MCTSNode(state=starting_code) 
 
-    def run(self, iterations: int = 10) -> str:
-        logger.info(f"Starting MCTS Search for {iterations} iterations...")
+    # UPDATE: Added 'on_step' callback parameter
+    def run(self, iterations: int = 10, on_step: Callable[[str], None] = None) -> str:
+        
+        log_msg = f"Starting MCTS Search for {iterations} iterations..."
+        logger.info(log_msg)
+        if on_step: on_step(log_msg)
         
         for i in range(iterations):
+            # 1. Selection
             node = self._select(self.root)
             
+            # 2. Expansion
             if not node.is_terminal:
                 if node.visits > 0:
                     node = self._expand(node)
             
+            # 3. Simulation
             reward = self._simulate(node)
+            
+            # 4. Backpropagation
             self._backpropagate(node, reward)
             
+            # Logging & UI Update
             depth = self._get_depth(node)
             snippet = node.state.replace("\n", " ")[-40:]
             
+            status = "SyntaxErr" if reward == -1.0 else "Valid/Inc"
+            
             if reward == 1.0:
-                logger.info(f"ITER {i+1}: 🌟 SOLUTION FOUND at depth {depth}")
+                success_msg = f"ITER {i+1}: 🌟 SOLUTION FOUND at depth {depth}"
+                logger.info(success_msg)
+                if on_step: on_step(success_msg)
                 return node.state
             else:
-                # Cleaner logging
-                status = "SyntaxErr" if reward == -1.0 else "Valid/Inc"
-                logger.info(f"ITER {i+1}: D{depth} | R:{reward} ({status}) | ...{snippet}")
+                step_msg = f"ITER {i+1}: Depth {depth} | Reward: {reward} ({status}) | ...{snippet}"
+                logger.info(step_msg)
+                if on_step: on_step(step_msg)
 
         best_node = self._get_best_child(self.root)
-        logger.warning("Max iterations reached. Returning best partial solution.")
+        logger.warning("Max iterations reached.")
         return best_node.state
 
     def _select(self, node: MCTSNode) -> MCTSNode:
@@ -49,12 +66,9 @@ class MCTSEngine:
     def _expand(self, node: MCTSNode) -> MCTSNode:
         candidates = self.llm.generate_candidates(self.problem, node.state, n=3)
         for code_snippet in candidates:
-            # Clean newline handling
-            # If the snippet starts with a newline, don't add another
             separator = "\n" 
             if node.state.endswith("\n") or code_snippet.startswith("\n"):
                 separator = ""
-                
             new_state = f"{node.state}{separator}{code_snippet}"
             child = MCTSNode(state=new_state, parent=node)
             node.children.append(child)
@@ -71,8 +85,6 @@ class MCTSEngine:
         elif result['error_type'] == 'syntax':
             return -1.0 
         else:
-            # Code is syntactically valid (or incomplete but valid structure)
-            # Give small reward to encourage depth
             return 0.1
 
     def _backpropagate(self, node: Optional[MCTSNode], reward: float):
