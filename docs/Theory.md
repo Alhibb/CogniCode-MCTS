@@ -63,5 +63,3 @@ Given a tree of depth $D$ and branching factor $B$, the space complexity is $O(B
 In a finite state space with deterministic rewards, MCTS is guaranteed to converge to the optimal solution as $N \to \infty$. In our context, convergence is defined as reaching a state $s$ where $R(s) = 1.0$.
 
 ---
-> [!NOTE]
-> This framework shifts focus from "token probability" to "policy optimization," aligning the repository with state-of-the-art research in Reasoning Scaling Laws.
