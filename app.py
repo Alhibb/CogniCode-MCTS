@@ -34,6 +34,14 @@ with st.sidebar:
     if not api_key_input:
         api_key_input = os.getenv("GEMINI_API_KEY")
     
+    # 2. Search Strategy
+    st.subheader("Search Strategy")
+    search_mode = st.radio("Algorithm", ["Standard UCB1", "Neural-PUCT (o1 Style)"], help="PUCT uses LLM priors for faster convergence.")
+    
+    use_puct = (search_mode == "Neural-PUCT (o1 Style)")
+    
+    c_puct = st.slider("Exploration Weight (C)", min_value=0.1, max_value=5.0, value=1.41, help="Higher C = more exploration.")
+
     # 2. Iterations
     iterations = st.slider("Search Iterations", min_value=5, max_value=50, value=20, help="More iterations = Deeper search but slower.")
 
@@ -118,7 +126,12 @@ if start_btn:
         # Run with Status Spinner
         with st.status("Thinking...", expanded=True) as status:
             st.write("Initializing Search Tree...")
-            final_code = engine.run(iterations=iterations, on_step=ui_callback)
+            final_code = engine.run(
+                iterations=iterations, 
+                on_step=ui_callback,
+                use_puct=use_puct,
+                c_puct=c_puct
+            )
             status.update(label="Reasoning Complete!", state="complete", expanded=False)
 
         # Show Result

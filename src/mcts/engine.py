@@ -17,15 +17,15 @@ class MCTSEngine:
         self.root = MCTSNode(state=starting_code) 
 
     # UPDATE: Added 'on_step' callback parameter
-    def run(self, iterations: int = 10, on_step: Callable[[str], None] = None) -> str:
+    def run(self, iterations: int = 10, on_step: Callable[[str], None] = None, use_puct: bool = True, c_puct: float = 1.41) -> str:
         
-        log_msg = f"Starting MCTS Search for {iterations} iterations..."
+        log_msg = f"Starting {'Neural-PUCT' if use_puct else 'Standard UCB1'} Search..."
         logger.info(log_msg)
         if on_step: on_step(log_msg)
         
         for i in range(iterations):
             # 1. Selection
-            node = self._select(self.root)
+            node = self._select(self.root, use_puct, c_puct)
             
             # 2. Expansion
             if not node.is_terminal:
@@ -58,9 +58,9 @@ class MCTSEngine:
         logger.warning("Max iterations reached.")
         return best_node.state
 
-    def _select(self, node: MCTSNode) -> MCTSNode:
+    def _select(self, node: MCTSNode, use_puct: bool = True, c_puct: float = 1.41) -> MCTSNode:
         while node.children and node.is_fully_expanded:
-            node = node.best_child()
+            node = node.best_child(use_puct=use_puct)
         return node
 
     def _expand(self, node: MCTSNode) -> MCTSNode:
@@ -70,7 +70,11 @@ class MCTSEngine:
             if node.state.endswith("\n") or code_snippet.startswith("\n"):
                 separator = ""
             new_state = f"{node.state}{separator}{code_snippet}"
-            child = MCTSNode(state=new_state, parent=node)
+            
+            # Use LLM to get prior for this specific candidate
+            prior = self.llm.predict_value(self.problem, new_state)
+            
+            child = MCTSNode(state=new_state, parent=node, prior=prior)
             node.children.append(child)
         
         node.is_fully_expanded = True
@@ -85,7 +89,10 @@ class MCTSEngine:
         elif result['error_type'] == 'syntax':
             return -1.0 
         else:
-            return 0.1
+            # Logic failed or incomplete - use LLM as a "Heuristic Critic"
+            # This is the "Neural Value Function" part of the implementation plan
+            llm_heuristic = self.llm.predict_value(self.problem, node.state)
+            return llm_heuristic
 
     def _backpropagate(self, node: Optional[MCTSNode], reward: float):
         while node:

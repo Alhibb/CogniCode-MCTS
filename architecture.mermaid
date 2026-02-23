@@ -1,0 +1,9 @@
+graph TD
+    A[Root: Function Signature] --> B{MCTS Engine}
+    B --> C[Selection: PUCT Heuristic]
+    C --> D[Expansion: LLM Candidate Gen]
+    D --> E[Simulation: Code Sandbox]
+    E --> F{Evaluation}
+    F -->|Success| G[🏁 Solution Found]
+    F -->|Failure/Syntax| H[Backpropagation: Reward Update]
+    H --> B

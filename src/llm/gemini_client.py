@@ -60,6 +60,49 @@ class GeminiClient(AbstractLLMClient):
             logger.error(f"API Error: {e}")
             return ["    pass # API Failure"]
 
+    def predict_value(self, problem: str, current_state: str) -> float:
+        if self.mock_mode:
+            return self._mock_value_predictor(current_state)
+        
+        prompt = f"""
+        You are an AI Research Critic.
+        GOAL: {problem}
+        
+        CURRENT CODE:
+        ```python
+        {current_state}
+        ```
+        
+        TASK:
+        Evaluate the likelihood that this code will lead to a correct solution.
+        Return ONLY a single float value between 0.0 and 1.0.
+        - 1.0: Solution is complete and correct.
+        - 0.5: On the right track, but incomplete.
+        - 0.1: Likely to fail or has logic errors.
+        - 0.0: Syntax error or completely wrong path.
+        
+        VALUE:
+        """
+        
+        try:
+            response = self.model.generate_content(prompt)
+            match = re.search(r"(\d+\.\d+|\d+)", response.text)
+            if match:
+                return min(max(float(match.group(1)), 0.0), 1.0)
+            return 0.1
+        except Exception as e:
+            logger.error(f"Value Prediction API Error: {e}")
+            return 0.1
+
+    def _mock_value_predictor(self, current_state: str) -> float:
+        if "return n * factorial" in current_state:
+            return 0.9
+        if "if n == 0:" in current_state:
+            return 0.6
+        if "def factorial" in current_state:
+            return 0.3
+        return 0.1
+
     def _mock_generator(self, current_state: str, n: int) -> List[str]:
         # (Mock logic remains the same, but ensure indentation)
         if "def" not in current_state:

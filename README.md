@@ -10,145 +10,87 @@
 ## Abstract
 Current Large Language Models (LLMs) operate primarily as **"System 1"** thinkers—generating tokens based on immediate probability distributions without lookahead. This autoregressive nature often results in syntax errors, logic bugs, and hallucinations, particularly in complex code generation tasks where early errors propagate.
 
-**CogniCode-MCTS** implements a **"System 2"** reasoning layer using **Monte Carlo Tree Search (MCTS)**. By treating code generation as a state-space search problem, this framework allows the model to:
-1.  **Explore** multiple implementation paths.
-2.  **Verify** logic using a sandboxed execution environment (Ground Truth).
-3.  **Backtrack** from dead ends (syntax errors/logic failures).
-
-This project demonstrates that **Inference-Time Compute** (spending more time thinking) can significantly outperform larger models that rely solely on parameter scale.
+**CogniCode-MCTS** implements a **"System 2"** reasoning layer using **Monte Carlo Tree Search (MCTS)** and the **PUCT** selection heuristic. By treating code generation as a state-space search problem, this framework allows the model to explore multiple implementation paths, verify logic in a sandbox, and backtrack from dead ends.
 
 ---
 
-## Key Features
+## Technical Architecture
 
-*   **Search-Based Generation:** Uses MCTS (UCB1) to balance exploration of new code paths vs. exploitation of promising drafts.
-*   **Deterministic Verification:** Code is not just generated; it is executed, tested, and verified in a secure, local `subprocess` sandbox.
-*   **Self-Correction:** The agent detects syntax errors (via AST) and runtime errors, punishing those branches (-1.0 reward) and forcing the LLM to try alternative logic.
-*   **Interactive Dashboard:** Includes a **Streamlit** interface to visualize the reasoning tree, decision steps, and backpropagation in real-time.
-*   **Modular Architecture:** Decoupled Search Engine, Environment, and LLM Client allows for easy benchmarking of different models (Gemini 1.5 Flash/Pro, GPT-4o, etc.).
+The system follows a Reinforcement Learning from Symbolic Feedback (RLSF) pattern, providing a deterministic "Ground Truth" to a non-deterministic generative model.
+
+```mermaid
+graph TD
+    A[Root: Function Signature] --> B{MCTS Engine}
+    B --> C[Selection: PUCT Heuristic]
+    C --> D[Expansion: LLM Candidate Gen]
+    D --> E[Simulation: Code Sandbox]
+    E --> F{Evaluation}
+    F -->|Success| G[🏁 Solution Found]
+    F -->|Failure/Syntax| H[Backpropagation: Reward Update]
+    H --> B
+```
+
+### Key Methodology
+*   **PUCT Selection:** Balances prior probability $P(s,a)$ from the LLM with exploration-driven value $Q(s,a)$.
+*   **Neural Value Function:** Uses the LLM as a "Heuristic Critic" to evaluate partial code snippets, moving beyond random rollouts.
+*   **AST Sandbox:** Proactively patches incomplete code to allow structural validation of partial generation.
 
 ---
 
-##  Installation
+## Research Gap & Novelty
+Most LLM research focuses on **Parameter Scaling** (increasing model size). This project investigates **Inference-Time Compute Scaling**, demonstrating that structured search can compensate for smaller model footprints, a core challenge in sustainable AI and edge computing.
+
+---
+
+##  Installation & Reproducibility
 
 ```bash
 # 1. Clone the repository
 git clone https://github.com/alhibb/CogniCode-MCTS.git
 cd CogniCode-MCTS
 
-# 2. Create a virtual environment (Recommended)
+# 2. Setup Environment
 python -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
 
-# 3. Install dependencies
+# 3. Install Research Dependencies
 pip install -r requirements.txt
+pip install matplotlib pandas
+```
+
+### Reproducing Results
+To reproduce the research benchmarks and ablation studies:
+```bash
+$env:PYTHONPATH="."
+python benchmarks/ablation.py  # Compare UCB1 vs Neural-PUCT
+python benchmarks/runner.py    # Generate performance scaling graphs
 ```
 
 ---
 
 ##  Usage
 
-You can run the engine in two modes: **CLI (Headless)** or **GUI (Interactive)**.
-
-### Mode 1: Interactive Dashboard (Recommended)
-Visualize the thinking process in real-time.
-
-1.  Start the application:
-    ```bash
-    streamlit run app.py
-    ```
-2.  Open your browser to the URL provided (usually `http://localhost:8501`).
-3.  Enter your **Gemini API Key** in the sidebar.
-4.  Define your problem (e.g., *"Write a Fibonacci function"*) and the hidden unit tests.
-5.  Click **Start Reasoning**.
-
-### Mode 2: Command Line Interface (CLI)
-For automated testing or headless servers.
-
-1.  Set your API key as an environment variable:
-    ```bash
-    # On Mac/Linux
-    export GEMINI_API_KEY="your_actual_api_key_here"
-    
-    # On Windows PowerShell
-    $env:GEMINI_API_KEY="your_actual_api_key_here"
-    ```
-2.  Run the engine:
-    ```bash
-    python main.py
-    ```
+### Interactive Research Dashboard
+```bash
+streamlit run app.py
+```
+*   **Research Mode:** Toggle between Standard UCB1 and Neural-PUCT.
+*   **Hyperparameter Tuning:** Real-time adjustment of Exploration Weight ($C$) and Iteration Depth.
 
 ---
 
-##  System Architecture
-
-The system follows a classical Control Theory loop applied to Generative AI.
-
-![Flowchart](architecture_diagram2.png)
-
-
-### Directory Structure
-```text
-CogniCode-MCTS/
-├── docs/               # Research documentation
-├── src/
-│   ├── mcts/           # Core Search Algorithms (Engine, Node)
-│   ├── environment/    # Execution Sandbox (AST, Subprocess)
-│   ├── llm/            # API Clients (Gemini, Mock)
-│   └── utils/          # Loggers
-├── app.py              # Streamlit User Interface
-├── main.py             # CLI Entry Point
-└── requirements.txt    # Dependencies
-```
+##  Future Work
+- **Multi-Agent Coordination:** Investigating decentralized MCTS for collaborative code modules.
+- **Intrinsic Motivation:** Implementing curiosity-driven rewards for sparse code environments.
+- **Resource Constraints:** Optimizing tree pruning for deployment on Edge-IoT devices.
 
 ---
 
-##  Experimental Results & Robustness
-
-In initial testing on the Google Gemini API (Free Tier), the system demonstrated **Architectural Resilience**.
-
-When the API quotas were exceeded (HTTP 429), the `CogniCode` engine automatically degraded gracefully:
-1.  **Detected** the rate limit.
-2.  **Switched** strategy from Cloud Inference to Local Heuristic Search (Mock/Local fallback).
-3.  **Preserved** the search tree state.
-4.  **Successfully resolved** the factorial problem at **Iteration 23**.
-
-**Log Sample:**
+## Citation & Academic Use
+If you use this framework in your research, please cite it as:
 ```text
-21:20:05 - ITER 1: Visited depth 0 | Reward: 0.1
-21:20:05 - API Error: 429 You exceeded your current quota...
-...
-21:20:06 - ITER 22: Visited depth 7 | Reward: 0.1
-21:20:06 - ITER 23:  SOLUTION FOUND at depth 3
-```
-
----
-
-## Proof of Concept
-*Experiment Date: 25 November 2025*
-*Model Simulation: Google Gemini 2.5 Flash via API*
-
-In 5 iterations, the agent successfully navigated from an empty function signature to a fully working recursive algorithm, rejecting incomplete paths along the way.
-
-**Scenario:**
-*   **Input:** `def factorial(n):`
-*   **Goal:** Recursive implementation.
-*   **Constraint:** Must handle `n=0`.
-
-**Execution Log:**
-```text
-04:50:10 - Seed: def factorial(n):
-04:50:24 - ITER 3: D1 | R:0.1 (Valid/Inc) | ...rial(n):     if n == 0:         return 1
-04:50:27 - ITER 5:  SOLUTION FOUND at depth 2
-```
-
-**Final Output:**
-```python
-def factorial(n):
-    if n == 0:
-        return 1
-    else:
-        return n * factorial(n - 1)
+Rabiu, I. (2025). CogniCode-MCTS: A Framework for Verifiable Inference-Time Reasoning in LLMs. 
+GitHub Repository: https://github.com/Alhibb/CogniCode-MCTS
 ```
 
 ---
@@ -156,7 +98,7 @@ def factorial(n):
 ## Author
 
 **IBRAHIM RABIU**  
-*Web3 Developer & AI Researcher*
+*AI & Web3 Developer*
 
 Exploring the intersection of Distributed Systems, Game Theory, and Large Language Models.
 
